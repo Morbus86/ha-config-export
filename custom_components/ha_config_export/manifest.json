@@ -1,7 +1,7 @@
 {
   "domain": "ha_config_export",
   "name": "HA Config Export",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "documentation": "https://github.com/Morbus86/ha-config-export",
   "issue_tracker": "https://github.com/Morbus86/ha-config-export/issues",
   "codeowners": ["@Morbus86"],

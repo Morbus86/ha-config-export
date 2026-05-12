@@ -1,4 +1,4 @@
-"""HA Config Export - Vollständige Export-Logik."""
+"""HA Config Export - Vollständige Export-Logik inkl. Fehlerlog."""
 import os
 import json
 import zipfile
@@ -6,13 +6,12 @@ import datetime
 import logging
 import aiohttp
 
-from .const import CONFIG_YAML_FILES, STORAGE_FILES, EXCLUDED_STORAGE
+from .const import CONFIG_YAML_FILES, STORAGE_FILES, EXCLUDED_STORAGE, LOG_FILES
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _read_file_safe(path: str) -> str:
-    """Dateiinhalt lesen, Fehler abfangen."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
@@ -21,10 +20,7 @@ def _read_file_safe(path: str) -> str:
 
 
 async def async_create_export(hass, config_path: str) -> tuple[str | None, str | None]:
-    """Erstellt ZIP + lesbare Textdatei für Claude-Upload.
-    
-    Returns: (zip_path, txt_path) – beide oder None bei Fehler.
-    """
+    """Erstellt ZIP + lesbare Textdatei für Claude-Upload."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_filename = f"ha_config_export_{timestamp}.zip"
     txt_filename = f"ha_export_for_claude_{timestamp}.txt"
@@ -45,8 +41,7 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
             for filename in CONFIG_YAML_FILES:
                 full_path = os.path.join("/config", filename)
                 if os.path.exists(full_path):
-                    content = _read_file_safe(full_path)
-                    add_section(f"YAML: {filename}", content)
+                    add_section(f"YAML: {filename}", _read_file_safe(full_path))
                     added.append(filename)
                 else:
                     skipped.append(filename)
@@ -59,8 +54,7 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                         if file.endswith(".yaml"):
                             fpath = os.path.join(root, file)
                             rel = os.path.relpath(fpath, "/config")
-                            content = _read_file_safe(fpath)
-                            add_section(f"YAML: packages/{file}", content)
+                            add_section(f"YAML: packages/{file}", _read_file_safe(fpath))
                             added.append(rel)
 
             # 3. .storage Dateien
@@ -71,39 +65,42 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                     if os.path.exists(full_path):
                         content = _read_file_safe(full_path)
                         try:
-                            parsed = json.loads(content)
-                            content = json.dumps(parsed, indent=2, ensure_ascii=False)
+                            content = json.dumps(json.loads(content), indent=2, ensure_ascii=False)
                         except Exception:
                             pass
                         add_section(f"STORAGE: {filename}", content)
                         added.append(f".storage/{filename}")
 
-                # Alle lovelace.* Dashboards automatisch
                 for entry in sorted(os.listdir(storage_dir)):
                     if entry.startswith("lovelace.") and entry not in EXCLUDED_STORAGE:
                         full_path = os.path.join(storage_dir, entry)
                         if os.path.isfile(full_path):
                             content = _read_file_safe(full_path)
                             try:
-                                parsed = json.loads(content)
-                                content = json.dumps(parsed, indent=2, ensure_ascii=False)
+                                content = json.dumps(json.loads(content), indent=2, ensure_ascii=False)
                             except Exception:
                                 pass
                             add_section(f"STORAGE: {entry}", content)
                             added.append(f".storage/{entry}")
 
-            # Zusammenfassung am Anfang
+            # 4. Fehler-Logs
+            for log_path in LOG_FILES:
+                if os.path.exists(log_path):
+                    add_section(f"LOG: {os.path.basename(log_path)}", _read_file_safe(log_path))
+                    added.append(os.path.basename(log_path))
+
+            # Header / Zusammenfassung
             header = (
                 f"HA CONFIG EXPORT – {timestamp}\n"
                 f"Exportiert: {len(added)} Dateien\n"
                 f"Nicht gefunden (optional): {len(skipped)}\n"
-                f"Zweck: Upload zu Claude für Analyse\n\n"
+                f"Zweck: Upload zu Claude für vollständige HA-Analyse\n\n"
                 f"Enthaltene Dateien:\n"
             )
             for f in added:
                 header += f"  + {f}\n"
             if skipped:
-                header += "\nNicht gefunden:\n"
+                header += "\nNicht gefunden (optional):\n"
                 for f in skipped:
                     header += f"  - {f}\n"
 
@@ -116,31 +113,29 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
             # ZIP schreiben
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("export_summary.txt", header)
-                # YAML
                 for filename in CONFIG_YAML_FILES:
-                    full_path = os.path.join("/config", filename)
-                    if os.path.exists(full_path):
-                        zf.write(full_path, arcname=f"yaml/{filename}")
-                # packages
+                    fp = os.path.join("/config", filename)
+                    if os.path.exists(fp):
+                        zf.write(fp, arcname=f"yaml/{filename}")
                 if os.path.isdir(packages_dir):
                     for root, _, files in os.walk(packages_dir):
                         for file in files:
                             if file.endswith(".yaml"):
                                 fpath = os.path.join(root, file)
-                                arcname = "yaml/packages/" + os.path.relpath(fpath, packages_dir)
-                                zf.write(fpath, arcname=arcname)
-                # .storage
+                                zf.write(fpath, arcname="yaml/packages/" + os.path.relpath(fpath, packages_dir))
                 if os.path.isdir(storage_dir):
                     for filename in STORAGE_FILES:
-                        full_path = os.path.join(storage_dir, filename)
-                        if os.path.exists(full_path):
-                            zf.write(full_path, arcname=f"storage/{filename}")
+                        fp = os.path.join(storage_dir, filename)
+                        if os.path.exists(fp):
+                            zf.write(fp, arcname=f"storage/{filename}")
                     for entry in os.listdir(storage_dir):
                         if entry.startswith("lovelace.") and entry not in EXCLUDED_STORAGE:
-                            full_path = os.path.join(storage_dir, entry)
-                            if os.path.isfile(full_path):
-                                zf.write(full_path, arcname=f"storage/{entry}")
-                # Textdatei auch in ZIP
+                            fp = os.path.join(storage_dir, entry)
+                            if os.path.isfile(fp):
+                                zf.write(fp, arcname=f"storage/{entry}")
+                for log_path in LOG_FILES:
+                    if os.path.exists(log_path):
+                        zf.write(log_path, arcname=f"logs/{os.path.basename(log_path)}")
                 zf.write(txt_path, arcname=txt_filename)
 
             _LOGGER.info("Export fertig: %d Dateien → %s", len(added), zip_path)
@@ -154,7 +149,6 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
 
 
 async def async_send_telegram(token: str, chat_id: str, message: str, file_path: str = None):
-    """Sendet Telegram-Nachricht mit optionalem Anhang."""
     async with aiohttp.ClientSession() as session:
         try:
             if file_path and os.path.exists(file_path):
@@ -169,8 +163,7 @@ async def async_send_telegram(token: str, chat_id: str, message: str, file_path:
                             _LOGGER.error("Telegram sendDocument failed: %s", await resp.text())
             else:
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
-                payload = {"chat_id": chat_id, "text": message}
-                async with session.post(url, json=payload) as resp:
+                async with session.post(url, json={"chat_id": chat_id, "text": message}) as resp:
                     if resp.status != 200:
                         _LOGGER.error("Telegram sendMessage failed: %s", await resp.text())
         except Exception as err:

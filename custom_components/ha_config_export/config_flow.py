@@ -1,4 +1,4 @@
-"""HA Config Export - Config Flow (vereinfacht)."""
+"""HA Config Export - Config Flow."""
 import voluptuous as vol
 from homeassistant import config_entries
 import aiohttp
@@ -9,12 +9,12 @@ from .const import (
     CONF_TELEGRAM_TOKEN,
     CONF_TELEGRAM_CHAT_ID,
     DEFAULT_EXPORT_PATH,
+    DEFAULT_TELEGRAM_TOKEN,
+    DEFAULT_TELEGRAM_CHAT_ID,
 )
 
 
 class HAConfigExportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Schritt-für-Schritt Setup."""
-
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
@@ -33,7 +33,7 @@ class HAConfigExportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_telegram(self, user_input=None):
-        """Schritt 2: Telegram-Benachrichtigung."""
+        """Schritt 2: Telegram (vorausgefüllt)."""
         errors = {}
         if user_input is not None:
             token = user_input.get(CONF_TELEGRAM_TOKEN, "").strip()
@@ -51,8 +51,8 @@ class HAConfigExportConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="telegram",
             data_schema=vol.Schema({
-                vol.Optional(CONF_TELEGRAM_TOKEN, default=""): str,
-                vol.Optional(CONF_TELEGRAM_CHAT_ID, default=""): str,
+                vol.Optional(CONF_TELEGRAM_TOKEN, default=DEFAULT_TELEGRAM_TOKEN): str,
+                vol.Optional(CONF_TELEGRAM_CHAT_ID, default=DEFAULT_TELEGRAM_CHAT_ID): str,
             }),
             errors=errors,
         )

@@ -6,6 +6,10 @@ CONF_TELEGRAM_CHAT_ID = "telegram_chat_id"
 
 DEFAULT_EXPORT_PATH = "/backup/"
 
+# Vorausgefüllte Standardwerte (Gregor's HA Claude Bridge Bot)
+DEFAULT_TELEGRAM_TOKEN = "8720209745:AAHSj6nu-hmmwyHkcg8vezHsaQZ9FioFI_k"
+DEFAULT_TELEGRAM_CHAT_ID = "67511843"
+
 # YAML-Dateien aus /config/
 CONFIG_YAML_FILES = [
     "configuration.yaml",
@@ -28,14 +32,13 @@ CONFIG_YAML_FILES = [
     "shell_command.yaml",
 ]
 
-# .storage Dateien – alles was UI-Konfiguration enthält
+# .storage Dateien
 STORAGE_FILES = [
     "core.config_entries",
     "core.entity_registry",
     "core.device_registry",
     "core.area_registry",
     "lovelace",
-    "lovelace.dashboard_default",
     "input_boolean",
     "input_number",
     "input_text",
@@ -51,6 +54,12 @@ STORAGE_FILES = [
     "scene",
     "template",
     "helpers",
+]
+
+# Log-Dateien
+LOG_FILES = [
+    "/config/home-assistant.log",
+    "/config/home-assistant.log.1",
 ]
 
 # NIEMALS exportieren
