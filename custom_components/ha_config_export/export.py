@@ -230,23 +230,42 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
         return None, None
 
 
-async def async_send_telegram(token: str, chat_id: str, message: str, file_path: str = None):
+def _read_binary_file(path: str) -> bytes | None:
+    """Synchrones Lesen einer Binärdatei (läuft im Executor)."""
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except Exception as e:
+        _LOGGER.error("Datei lesen fehlgeschlagen: %s", e)
+        return None
+
+
+async def async_send_telegram(hass, token: str, chat_id: str, message: str, file_path: str = None):
+    """Sendet Telegram-Nachricht. Datei wird im Executor gelesen (non-blocking)."""
     async with aiohttp.ClientSession() as session:
         try:
-            if file_path and os.path.exists(file_path):
-                url = f"https://api.telegram.org/bot{token}/sendDocument"
-                with open(file_path, "rb") as f:
+            if file_path:
+                # os.path.exists und open(rb) im Executor – nicht blockierend
+                file_content = await hass.async_add_executor_job(_read_binary_file, file_path)
+                if file_content is None:
+                    _LOGGER.warning("Datei nicht lesbar, sende nur Text")
+                    file_content = False
+
+                if file_content:
+                    url = f"https://api.telegram.org/bot{token}/sendDocument"
                     data = aiohttp.FormData()
                     data.add_field("chat_id", chat_id)
                     data.add_field("caption", message)
-                    data.add_field("document", f, filename=os.path.basename(file_path))
+                    data.add_field("document", file_content, filename=os.path.basename(file_path))
                     async with session.post(url, data=data) as resp:
                         if resp.status != 200:
                             _LOGGER.error("Telegram sendDocument failed: %s", await resp.text())
-            else:
-                url = f"https://api.telegram.org/bot{token}/sendMessage"
-                async with session.post(url, json={"chat_id": chat_id, "text": message}) as resp:
-                    if resp.status != 200:
-                        _LOGGER.error("Telegram sendMessage failed: %s", await resp.text())
+                    return
+
+            # Fallback: nur Textnachricht
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            async with session.post(url, json={"chat_id": chat_id, "text": message}) as resp:
+                if resp.status != 200:
+                    _LOGGER.error("Telegram sendMessage failed: %s", await resp.text())
         except Exception as err:
             _LOGGER.error("Telegram error: %s", err)

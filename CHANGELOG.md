@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.5 (2026-05-12)
+### Behoben
+- **Blocking-Call-Warnung im HA-Core-Log entfernt**: Telegram-Datei wird jetzt im Executor-Thread gelesen statt in der Event Loop. Verhindert die `homeassistant.util.loop` Warnung bei jedem Export.
+
+---
+
 ## v1.1.4 (2026-05-12)
 ### Neu – Kritische Logs für Diagnose
 - **HA Core Log** via Supervisor API (`/core/logs`)

@@ -47,9 +47,9 @@ class HAConfigExportButton(ButtonEntity):
                 f"➡️ ha_export_for_claude_*.txt in Claude hochladen"
             )
             if token and chat_id:
-                await async_send_telegram(token, chat_id, message, txt_path)
+                await async_send_telegram(self.hass, token, chat_id, message, txt_path)
             _LOGGER.info("Export erfolgreich: %s", zip_path)
         else:
             message = "❌ HA Config Export fehlgeschlagen – Details im HA Log"
             if token and chat_id:
-                await async_send_telegram(token, chat_id, message)
+                await async_send_telegram(self.hass, token, chat_id, message)
