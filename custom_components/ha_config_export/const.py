@@ -34,11 +34,13 @@ CONFIG_YAML_FILES = [
 
 # .storage Dateien
 STORAGE_FILES = [
+    # Kern-System
     "core.config_entries",
     "core.entity_registry",
     "core.device_registry",
     "core.area_registry",
-    "lovelace",
+    "core.homeassistant",
+    # Helfer
     "input_boolean",
     "input_number",
     "input_text",
@@ -49,15 +51,25 @@ STORAGE_FILES = [
     "schedule",
     "person",
     "zone",
+    # UI-Konfigurationen
+    "lovelace",
+    "lovelace.resources",
+    "energy",
+    # Automationen & Skripte (UI-erstellt)
     "automation",
     "script",
     "scene",
     "template",
     "helpers",
+    # HACS
+    "hacs",
+    "hacs.repositories",
 ]
 
-# Log-Dateien
+# Log-Dateien (HAOS + andere Installationstypen)
 LOG_FILES = [
+    "/homeassistant/home-assistant.log",
+    "/homeassistant/home-assistant.log.1",
     "/config/home-assistant.log",
     "/config/home-assistant.log.1",
 ]

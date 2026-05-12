@@ -1,4 +1,4 @@
-"""HA Config Export - Vollständige Export-Logik inkl. Fehlerlog."""
+"""HA Config Export - Vollständige Export-Logik."""
 import os
 import json
 import zipfile
@@ -19,6 +19,33 @@ def _read_file_safe(path: str) -> str:
         return f"[LESEFEHLER: {e}]"
 
 
+async def _fetch_supervisor_addons() -> str:
+    """Supervisor Add-ons Liste via Supervisor API abrufen (nur HAOS)."""
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return "[Supervisor API nicht verfügbar – kein HAOS?]"
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {"Authorization": f"Bearer {token}"}
+            async with session.get("http://supervisor/addons", headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    addons = data.get("data", {}).get("addons", [])
+                    lines = ["Installierte Add-ons:\n"]
+                    for a in addons:
+                        status = "✅ aktiv" if a.get("state") == "started" else "⏹ gestoppt"
+                        lines.append(
+                            f"  {status} | {a.get('name')} "
+                            f"v{a.get('version')} "
+                            f"[{a.get('slug')}]"
+                        )
+                    return "\n".join(lines)
+                else:
+                    return f"[Supervisor API Fehler: HTTP {resp.status}]"
+    except Exception as e:
+        return f"[Supervisor API Fehler: {e}]"
+
+
 async def async_create_export(hass, config_path: str) -> tuple[str | None, str | None]:
     """Erstellt ZIP + lesbare Textdatei für Claude-Upload."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -26,6 +53,9 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
     txt_filename = f"ha_export_for_claude_{timestamp}.txt"
     zip_path = os.path.join(config_path, zip_filename)
     txt_path = os.path.join(config_path, txt_filename)
+
+    # Supervisor Add-ons async abrufen (vor dem sync-Block)
+    addons_info = await _fetch_supervisor_addons()
 
     try:
         def _write_export():
@@ -36,6 +66,10 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
 
             def add_section(title: str, content: str):
                 sections.append(f"\n{'='*60}\n## {title}\n{'='*60}\n{content}\n")
+
+            # 0. Supervisor Add-ons
+            add_section("SUPERVISOR: Add-ons", addons_info)
+            added.append("supervisor/addons")
 
             # 1. YAML-Dateien
             for filename in CONFIG_YAML_FILES:
@@ -50,7 +84,7 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
             packages_dir = "/config/packages"
             if os.path.isdir(packages_dir):
                 for root, _, files in os.walk(packages_dir):
-                    for file in files:
+                    for file in sorted(files):
                         if file.endswith(".yaml"):
                             fpath = os.path.join(root, file)
                             rel = os.path.relpath(fpath, "/config")
@@ -71,6 +105,7 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                         add_section(f"STORAGE: {filename}", content)
                         added.append(f".storage/{filename}")
 
+                # Alle lovelace.* Dashboards automatisch
                 for entry in sorted(os.listdir(storage_dir)):
                     if entry.startswith("lovelace.") and entry not in EXCLUDED_STORAGE:
                         full_path = os.path.join(storage_dir, entry)
@@ -88,14 +123,15 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                 if os.path.exists(log_path):
                     add_section(f"LOG: {os.path.basename(log_path)}", _read_file_safe(log_path))
                     added.append(os.path.basename(log_path))
+                    break  # Nur erste gefundene Log-Datei (verhindert Duplikate)
 
-            # Header / Zusammenfassung
+            # Header
             header = (
                 f"HA CONFIG EXPORT – {timestamp}\n"
-                f"Exportiert: {len(added)} Dateien\n"
+                f"Exportiert: {len(added)} Sektionen\n"
                 f"Nicht gefunden (optional): {len(skipped)}\n"
                 f"Zweck: Upload zu Claude für vollständige HA-Analyse\n\n"
-                f"Enthaltene Dateien:\n"
+                f"Inhalt:\n"
             )
             for f in added:
                 header += f"  + {f}\n"
@@ -113,6 +149,7 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
             # ZIP schreiben
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("export_summary.txt", header)
+                zf.writestr("supervisor_addons.txt", addons_info)
                 for filename in CONFIG_YAML_FILES:
                     fp = os.path.join("/config", filename)
                     if os.path.exists(fp):
@@ -136,9 +173,10 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                 for log_path in LOG_FILES:
                     if os.path.exists(log_path):
                         zf.write(log_path, arcname=f"logs/{os.path.basename(log_path)}")
+                        break
                 zf.write(txt_path, arcname=txt_filename)
 
-            _LOGGER.info("Export fertig: %d Dateien → %s", len(added), zip_path)
+            _LOGGER.info("Export fertig: %d Sektionen → %s", len(added), zip_path)
 
         await hass.async_add_executor_job(_write_export)
         return zip_path, txt_path

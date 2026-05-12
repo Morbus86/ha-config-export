@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.1.3 (2026-05-12)
+### Neu
+- Supervisor Add-ons Liste via Supervisor API (Name, Version, Status, Slug)
+- `.storage/core.homeassistant` – HA-Version, Standort, Zeitzone
+- `.storage/hacs` + `hacs.repositories` – installierte HACS-Pakete
+- `.storage/lovelace.resources` – geladene Frontend-Ressourcen
+- `.storage/energy` – Energie-Dashboard Konfiguration
+### Behoben
+- Log-Duplikate verhindert (break nach erster gefundener Log-Datei)
+
+---
+
+## v1.1.2 (2026-05-12)
+### Behoben
+- Log-Pfad korrigiert: HAOS speichert Log unter `/homeassistant/` nicht `/config/`
+- Fallback auf `/config/home-assistant.log` für andere Installationstypen
+
+---
+
 ## v1.1.1 (2026-05-12)
 ### Neu
 - Fehlerprotokolle (`home-assistant.log` + `.log.1`) werden exportiert
