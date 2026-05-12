@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.0 (2026-05-12)
+### Neu – Dokumentation
+- **Vollständige Installationsanleitung als HTML** unter `docs/installation.html`
+  - Mit eingebetteten Screenshots (selbst-enthaltene Datei)
+  - Schritt-für-Schritt von HACS-Setup bis Button-Druck
+  - Per Mail teilbar oder direkt aus dem Repo aufrufbar
+- **README.md überarbeitet** – Feature-Liste, Kurzanleitung, Voraussetzungen
+
+---
+
 ## v1.1.5 (2026-05-12)
 ### Behoben
 - **Blocking-Call-Warnung im HA-Core-Log entfernt**: Telegram-Datei wird jetzt im Executor-Thread gelesen statt in der Event Loop. Verhindert die `homeassistant.util.loop` Warnung bei jedem Export.
