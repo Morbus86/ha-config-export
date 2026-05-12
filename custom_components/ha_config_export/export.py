@@ -10,40 +10,48 @@ from .const import CONFIG_YAML_FILES, STORAGE_FILES, EXCLUDED_STORAGE, LOG_FILES
 
 _LOGGER = logging.getLogger(__name__)
 
+# Maximale Log-Größe pro Quelle (Bytes) - verhindert riesige Exporte
+MAX_LOG_SIZE = 500_000  # 500 KB
 
-def _read_file_safe(path: str) -> str:
+
+def _read_file_safe(path: str, max_size: int = None) -> str:
+    """Datei lesen, optional auf max_size beschränken (letzte N Bytes)."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        size = os.path.getsize(path)
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            if max_size and size > max_size:
+                f.seek(size - max_size)
+                content = f.read()
+                return f"[... gekürzt auf letzte {max_size} Bytes ...]\n{content}"
             return f.read()
     except Exception as e:
         return f"[LESEFEHLER: {e}]"
 
 
-async def _fetch_supervisor_addons() -> str:
-    """Supervisor Add-ons Liste via Supervisor API abrufen (nur HAOS)."""
+async def _supervisor_get(endpoint: str, as_json: bool = True) -> str:
+    """Supervisor API Aufruf. Gibt JSON-Inhalt oder Text zurück."""
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         return "[Supervisor API nicht verfügbar – kein HAOS?]"
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             headers = {"Authorization": f"Bearer {token}"}
-            async with session.get("http://supervisor/addons", headers=headers) as resp:
+            url = f"http://supervisor/{endpoint}"
+            async with session.get(url, headers=headers) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    addons = data.get("data", {}).get("addons", [])
-                    lines = ["Installierte Add-ons:\n"]
-                    for a in addons:
-                        status = "✅ aktiv" if a.get("state") == "started" else "⏹ gestoppt"
-                        lines.append(
-                            f"  {status} | {a.get('name')} "
-                            f"v{a.get('version')} "
-                            f"[{a.get('slug')}]"
-                        )
-                    return "\n".join(lines)
+                    if as_json:
+                        return await resp.text()
+                    else:
+                        text = await resp.text()
+                        # Logs auf MAX_LOG_SIZE kürzen
+                        if len(text) > MAX_LOG_SIZE:
+                            text = f"[... gekürzt auf letzte {MAX_LOG_SIZE} Bytes ...]\n" + text[-MAX_LOG_SIZE:]
+                        return text
                 else:
-                    return f"[Supervisor API Fehler: HTTP {resp.status}]"
+                    return f"[HTTP {resp.status} – {endpoint}]"
     except Exception as e:
-        return f"[Supervisor API Fehler: {e}]"
+        return f"[Supervisor API Fehler bei {endpoint}: {e}]"
 
 
 async def async_create_export(hass, config_path: str) -> tuple[str | None, str | None]:
@@ -54,8 +62,20 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
     zip_path = os.path.join(config_path, zip_filename)
     txt_path = os.path.join(config_path, txt_filename)
 
-    # Supervisor Add-ons async abrufen (vor dem sync-Block)
-    addons_info = await _fetch_supervisor_addons()
+    # Alle Supervisor-Daten async sammeln
+    _LOGGER.info("Sammle Supervisor-Daten...")
+    supervisor_data = {
+        "addons": await _supervisor_get("addons"),
+        "info": await _supervisor_get("info"),
+        "host_info": await _supervisor_get("host/info"),
+        "os_info": await _supervisor_get("os/info"),
+        "network_info": await _supervisor_get("network/info"),
+        "core_info": await _supervisor_get("core/info"),
+        "core_log": await _supervisor_get("core/logs", as_json=False),
+        "host_log": await _supervisor_get("host/logs", as_json=False),
+        "supervisor_log": await _supervisor_get("supervisor/logs", as_json=False),
+        "dns_log": await _supervisor_get("dns/logs", as_json=False),
+    }
 
     try:
         def _write_export():
@@ -67,11 +87,28 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
             def add_section(title: str, content: str):
                 sections.append(f"\n{'='*60}\n## {title}\n{'='*60}\n{content}\n")
 
-            # 0. Supervisor Add-ons
-            add_section("SUPERVISOR: Add-ons", addons_info)
-            added.append("supervisor/addons")
+            # 0. Supervisor / System
+            add_section("SUPERVISOR: Add-ons", supervisor_data["addons"])
+            add_section("SUPERVISOR: System Info", supervisor_data["info"])
+            add_section("SUPERVISOR: Host Info (CPU, RAM, Disk)", supervisor_data["host_info"])
+            add_section("SUPERVISOR: OS Info (HAOS Version, Updates)", supervisor_data["os_info"])
+            add_section("SUPERVISOR: Network Info (Adapter, IPs, DNS)", supervisor_data["network_info"])
+            add_section("SUPERVISOR: Core Info (HA Version)", supervisor_data["core_info"])
+            added.extend([
+                "supervisor/addons", "supervisor/info", "supervisor/host_info",
+                "supervisor/os_info", "supervisor/network_info", "supervisor/core_info"
+            ])
 
-            # 1. YAML-Dateien
+            # 1. KRITISCHE LOGS (für Diagnose)
+            add_section("LOG: HA Core (letzte 500KB)", supervisor_data["core_log"])
+            add_section("LOG: Host/Kernel (letzte 500KB)", supervisor_data["host_log"])
+            add_section("LOG: Supervisor (letzte 500KB)", supervisor_data["supervisor_log"])
+            add_section("LOG: DNS (letzte 500KB)", supervisor_data["dns_log"])
+            added.extend([
+                "log/ha_core", "log/host_kernel", "log/supervisor", "log/dns"
+            ])
+
+            # 2. YAML-Dateien
             for filename in CONFIG_YAML_FILES:
                 full_path = os.path.join("/config", filename)
                 if os.path.exists(full_path):
@@ -80,7 +117,7 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                 else:
                     skipped.append(filename)
 
-            # 2. packages/ Ordner
+            # 3. packages/ Ordner
             packages_dir = "/config/packages"
             if os.path.isdir(packages_dir):
                 for root, _, files in os.walk(packages_dir):
@@ -91,7 +128,7 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                             add_section(f"YAML: packages/{file}", _read_file_safe(fpath))
                             added.append(rel)
 
-            # 3. .storage Dateien
+            # 4. .storage Dateien
             storage_dir = "/config/.storage"
             if os.path.isdir(storage_dir):
                 for filename in STORAGE_FILES:
@@ -105,11 +142,13 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                         add_section(f"STORAGE: {filename}", content)
                         added.append(f".storage/{filename}")
 
-                # Alle lovelace.* Dashboards automatisch
+                # lovelace.* + hacs.* Dashboards/Daten automatisch
                 for entry in sorted(os.listdir(storage_dir)):
-                    if entry.startswith("lovelace.") and entry not in EXCLUDED_STORAGE:
+                    if entry in EXCLUDED_STORAGE:
+                        continue
+                    if entry.startswith("lovelace.") or entry.startswith("hacs."):
                         full_path = os.path.join(storage_dir, entry)
-                        if os.path.isfile(full_path):
+                        if os.path.isfile(full_path) and f".storage/{entry}" not in added:
                             content = _read_file_safe(full_path)
                             try:
                                 content = json.dumps(json.loads(content), indent=2, ensure_ascii=False)
@@ -118,19 +157,22 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                             add_section(f"STORAGE: {entry}", content)
                             added.append(f".storage/{entry}")
 
-            # 4. Fehler-Logs
+            # 5. Fallback: Lokale Log-Dateien (falls Supervisor API nicht klappt)
             for log_path in LOG_FILES:
                 if os.path.exists(log_path):
-                    add_section(f"LOG: {os.path.basename(log_path)}", _read_file_safe(log_path))
-                    added.append(os.path.basename(log_path))
-                    break  # Nur erste gefundene Log-Datei (verhindert Duplikate)
+                    add_section(
+                        f"LOG: {os.path.basename(log_path)} (Datei-Fallback)",
+                        _read_file_safe(log_path, max_size=MAX_LOG_SIZE)
+                    )
+                    added.append(f"file:{os.path.basename(log_path)}")
+                    break
 
             # Header
             header = (
                 f"HA CONFIG EXPORT – {timestamp}\n"
                 f"Exportiert: {len(added)} Sektionen\n"
                 f"Nicht gefunden (optional): {len(skipped)}\n"
-                f"Zweck: Upload zu Claude für vollständige HA-Analyse\n\n"
+                f"Zweck: Vollständige HA-Diagnose inkl. System/Kernel/Netzwerk-Logs\n\n"
                 f"Inhalt:\n"
             )
             for f in added:
@@ -142,14 +184,16 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
 
             full_text = header + "".join(sections)
 
-            # Textdatei schreiben
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(full_text)
 
-            # ZIP schreiben
+            # ZIP
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("export_summary.txt", header)
-                zf.writestr("supervisor_addons.txt", addons_info)
+                # Supervisor Daten als einzelne Dateien
+                for key, content in supervisor_data.items():
+                    zf.writestr(f"supervisor/{key}.txt", content)
+                # YAML
                 for filename in CONFIG_YAML_FILES:
                     fp = os.path.join("/config", filename)
                     if os.path.exists(fp):
@@ -160,20 +204,20 @@ async def async_create_export(hass, config_path: str) -> tuple[str | None, str |
                             if file.endswith(".yaml"):
                                 fpath = os.path.join(root, file)
                                 zf.write(fpath, arcname="yaml/packages/" + os.path.relpath(fpath, packages_dir))
+                # Storage
                 if os.path.isdir(storage_dir):
                     for filename in STORAGE_FILES:
                         fp = os.path.join(storage_dir, filename)
                         if os.path.exists(fp):
                             zf.write(fp, arcname=f"storage/{filename}")
                     for entry in os.listdir(storage_dir):
-                        if entry.startswith("lovelace.") and entry not in EXCLUDED_STORAGE:
+                        if entry in EXCLUDED_STORAGE:
+                            continue
+                        if entry.startswith("lovelace.") or entry.startswith("hacs."):
                             fp = os.path.join(storage_dir, entry)
                             if os.path.isfile(fp):
                                 zf.write(fp, arcname=f"storage/{entry}")
-                for log_path in LOG_FILES:
-                    if os.path.exists(log_path):
-                        zf.write(log_path, arcname=f"logs/{os.path.basename(log_path)}")
-                        break
+                # Textdatei mit rein
                 zf.write(txt_path, arcname=txt_filename)
 
             _LOGGER.info("Export fertig: %d Sektionen → %s", len(added), zip_path)

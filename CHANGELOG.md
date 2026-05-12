@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.1.4 (2026-05-12)
+### Neu – Kritische Logs für Diagnose
+- **HA Core Log** via Supervisor API (`/core/logs`)
+- **Host/Kernel Log** via Supervisor API (`/host/logs`) – wichtig für Hardware-/Netzwerk-Probleme
+- **Supervisor Log** via Supervisor API (`/supervisor/logs`)
+- **DNS Log** via Supervisor API (`/dns/logs`) – wichtig für Erreichbarkeitsprobleme
+### Neu – System-Diagnose-Infos
+- Host Info (CPU, RAM, Disk)
+- OS Info (HAOS Version, Updates)
+- Network Info (Adapter, IPs, DNS-Server)
+- Core Info (HA-Version, Konfiguration)
+### Neu – Storage
+- `.storage/hacs.*` (alle HACS-Dateien automatisch)
+- `.storage/lovelace.resources` (Frontend-Ressourcen)
+### Geändert
+- Logs auf 500KB pro Quelle gekürzt (verhindert riesige Exports)
+- Lokale Log-Datei als Fallback wenn Supervisor API nicht verfügbar
+
+---
+
 ## v1.1.3 (2026-05-12)
 ### Neu
 - Supervisor Add-ons Liste via Supervisor API (Name, Version, Status, Slug)
