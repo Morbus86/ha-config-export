@@ -23,6 +23,7 @@ async def async_create_export(hass, config_path: str, options: dict) -> str | No
 
     try:
         def _write_zip():
+            os.makedirs(config_path, exist_ok=True)
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for filename in files_to_add:
                     full_path = os.path.join("/config", filename)
