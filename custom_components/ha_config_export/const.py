@@ -3,20 +3,61 @@ DOMAIN = "ha_config_export"
 CONF_EXPORT_PATH = "export_path"
 CONF_TELEGRAM_TOKEN = "telegram_token"
 CONF_TELEGRAM_CHAT_ID = "telegram_chat_id"
-CONF_INCLUDE_AUTOMATIONS = "include_automations"
-CONF_INCLUDE_SCRIPTS = "include_scripts"
-CONF_INCLUDE_SCENES = "include_scenes"
-CONF_INCLUDE_CUSTOMIZE = "include_customize"
 
 DEFAULT_EXPORT_PATH = "/backup/"
 
-BASE_FILES = ["configuration.yaml"]
+# YAML-Dateien aus /config/
+CONFIG_YAML_FILES = [
+    "configuration.yaml",
+    "automations.yaml",
+    "scripts.yaml",
+    "scenes.yaml",
+    "customize.yaml",
+    "groups.yaml",
+    "input_boolean.yaml",
+    "input_number.yaml",
+    "input_text.yaml",
+    "input_select.yaml",
+    "input_datetime.yaml",
+    "template.yaml",
+    "switch.yaml",
+    "sensor.yaml",
+    "binary_sensor.yaml",
+    "alert.yaml",
+    "rest_command.yaml",
+    "shell_command.yaml",
+]
 
-OPTIONAL_FILES = {
-    CONF_INCLUDE_AUTOMATIONS: "automations.yaml",
-    CONF_INCLUDE_SCRIPTS: "scripts.yaml",
-    CONF_INCLUDE_SCENES: "scenes.yaml",
-    CONF_INCLUDE_CUSTOMIZE: "customize.yaml",
-}
+# .storage Dateien – alles was UI-Konfiguration enthält
+STORAGE_FILES = [
+    "core.config_entries",
+    "core.entity_registry",
+    "core.device_registry",
+    "core.area_registry",
+    "lovelace",
+    "lovelace.dashboard_default",
+    "input_boolean",
+    "input_number",
+    "input_text",
+    "input_select",
+    "input_datetime",
+    "counter",
+    "timer",
+    "schedule",
+    "person",
+    "zone",
+    "automation",
+    "script",
+    "scene",
+    "template",
+    "helpers",
+]
 
-EXCLUDED_FILES = ["secrets.yaml", ".storage", "auth"]
+# NIEMALS exportieren
+EXCLUDED_STORAGE = [
+    "auth",
+    "auth_provider.homeassistant",
+    "onboarding",
+    "cloud",
+    "google_assistant",
+]
