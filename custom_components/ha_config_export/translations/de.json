@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Schritt 1 – Export-Zielordner",
+        "description": "Trage den Pfad ein, wo die ZIP-Datei gespeichert werden soll.\nFür OneDrive-Sync typischerweise: /backup/",
+        "data": {
+          "export_path": "Zielordner (z.B. /backup/)"
+        }
+      },
+      "files": {
+        "title": "Schritt 2 – Dateien auswählen",
+        "description": "configuration.yaml wird immer exportiert. Wähle zusätzliche Dateien:",
+        "data": {
+          "include_automations": "automations.yaml",
+          "include_scripts": "scripts.yaml",
+          "include_scenes": "scenes.yaml",
+          "include_customize": "customize.yaml"
+        }
+      },
+      "telegram": {
+        "title": "Schritt 3 – Telegram (optional)",
+        "description": "Leer lassen um Telegram zu überspringen.\nBot-Token von @BotFather, Chat-ID von @userinfobot",
+        "data": {
+          "telegram_token": "Bot-Token",
+          "telegram_chat_id": "Chat-ID des Empfängers"
+        }
+      }
+    },
+    "error": {
+      "telegram_invalid": "Telegram-Token ungültig – bitte prüfen"
+    },
+    "abort": {
+      "already_configured": "HA Config Export ist bereits eingerichtet"
+    }
+  }
+}
